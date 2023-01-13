@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd">
+    <flow name="post-organization-flow">
+		<flow-ref doc:name="post-organization-initialize-vars-subflow" doc:id="a2049581-e413-43dd-8f3b-b3ff0c431742" name="post-organization-initialize-vars-subflow"/>
+		<choice doc:name="Payload size &gt; Sync Threshold?" doc:id="47a6fe27-4db2-42cb-9050-8b919d783ee0" >
+			<when expression="#[sizeOf(payload default []) &gt; (vars.organizationSyncThreshold as Number)]">
+				<logger level="INFO" doc:name="Processing In Async Mode" doc:id="f0bd627c-f7ff-408f-a011-428908e8573e" message="#[vars.loggingIdentifier] ASYNC Processing - Upsert Organization Request Received. Count: #[sizeOf(payload default [])] SyncProcessingThreshold: #[vars.organizationSyncThreshold]"/>
+				<async doc:name="Async" doc:id="a43eefad-989e-4985-8426-8f130f12acf4" >
+					<flow-ref doc:name="process-records-subflow" doc:id="f30bc533-204c-404a-81a7-9eb801e5f83d" name="process-records-subflow"/>
+				</async>
+				<ee:transform doc:name="Async Processing Response" doc:id="81366f52-8425-4d85-8b36-1646ede3dc9d">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	status: "SUCCESS",
+	message: "Request Received and will be processed asynchronously."
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="process-records-subflow" doc:id="a19ce38a-7b4d-4e50-8704-a06f72261487" name="process-records-subflow" />
+			</otherwise>
+		</choice>
+    
+</flow>
+	<sub-flow name="post-organization-initialize-vars-subflow" doc:id="923006c8-8453-48aa-a1e0-63f94da543ea" >
+		<set-variable value="#[Mule::p('syncprocessing.threshold.organization') as Number]" doc:name="Set organizationSyncThreshold" doc:id="cc423242-92a2-4594-81b2-fc10f136df82" variableName="organizationSyncThreshold" />
+		<set-variable value="#[Mule::p('batch.size.organization') as Number]" doc:name="Set organizationBatchSize" doc:id="ab5b0deb-5b82-4a2b-bf15-478a5ee51435" variableName="organizationBatchSize" />
+	</sub-flow>
+	<flow name="process-records-subflow" doc:id="c2d6c617-6320-48df-95da-a3ab9226a067">
+		<logger level="ERROR" doc:name="Logger" doc:id="8e3ec2bf-4c6b-4418-966f-8ec847ee9687" message="#[vars.loggingIdentifier] Upsert Organization Request Received. Count: #[sizeOf(payload default [])]. BatchSize: #[vars.organizationBatchSize]"/>
+		<ee:transform doc:name="Transform for Parallel ForEach" doc:id="78d368bc-19f7-4ba3-9976-aec177ef7bca" >
+			<ee:message >
+				<ee:set-payload resource="dwl/organization/post-organization-divide.dwl" />
+			</ee:message>
+		</ee:transform>
+		<parallel-foreach doc:name="Parallel For Each" doc:id="f350b1c7-9cb2-4dee-8b9c-daad6e3cf702" collection="#[payload]" maxConcurrency="${max.concurrency.organization}">
+			<ee:transform doc:name="SF Request" doc:id="89735e94-296f-4d02-85d1-90231676bf63" >
+				<ee:message >
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable resource="dwl/organization/sf-upsert-request.dwl" variableName="sfRequest" />
+				</ee:variables>
+			</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="f7419d50-a0bd-4f6c-8957-37c171f8731e" message="#[vars.sfRequest]"/>
+			<logger level="INFO" doc:name="SF Request Logger" doc:id="6e44230b-9efd-43f5-8b8e-a4d62620421f" message="#[vars.loggingIdentifier] SFRequest Account Names: #[vars.sfRequest.Name]"/>
+ 			<try doc:name="Try" doc:id="58a59ac6-2826-4d53-b448-1bacc42b4c87" >
+				<salesforce:upsert objectType="Account" externalIdFieldName="Id" doc:id="0b017286-fedd-4957-a7f9-16ef79053af5" config-ref="Salesforce_Config" doc:name="Upsert Organization" target="sfResponse">
+				<salesforce:records><![CDATA[#[vars.sfRequest]]]></salesforce:records>
+			</salesforce:upsert>
+				<error-handler >
+					<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="e9a24faa-ba97-48f5-bf5c-430b56a8b670" >
+						<logger level="ERROR" doc:name="Logger" doc:id="5793f7fd-8b93-4019-bd5e-3624377bac99" message="#[vars.loggingIdentifier] SF Error Occurred"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+			<logger level="INFO" doc:name="Response Message Logger" doc:id="3a2a06fc-2a14-4957-ac4e-eb92cf52e4a1" message="#[vars.loggingIdentifier] SF Response Received." />
+			<ee:transform doc:name="Parse SF Response" doc:id="3b6caf2f-d125-4bd9-ab93-57331cd10eb5" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+import * from dw::core::Arrays
+output application/json
+---
+(payload default []) map ((request,index) -> 
+using (response = vars.sfResponse.items[index])	
+{
+	responseSfId : response.id default request.accountId,
+	responseSuccessful: response.successful default false,
+	responseMessage: if(response.successful == false) (response.message default 'Misc Error Occurred') else '',
+	accountName: request.accountName,
+	accountId: request.accountId
+})]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<ee:transform doc:name="Failed Records" doc:id="ca34497a-af6c-46a4-b1e9-96eeb869928a">
+				<ee:message>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="failedRecordsMessage"><![CDATA[%dw 2.0
+output application/json
+var failedRecords = payload filter ($.responseSuccessful == false) default []
+---
+failedRecords map {
+	accountName: $.accountName,
+	responseMessage: $.responseMessage
+}]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<logger level="ERROR" doc:name="Failed Records" doc:id="2364bb20-b0a1-4d0c-a883-5b84d381d701" message="#[vars.loggingIdentifier] Failed Records: #[vars.failedRecordsMessage]" />
+ 		</parallel-foreach>
+		<ee:transform doc:name="Final Payload" doc:id="14b8583e-829d-4e8b-8100-e715715f189e">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+flatten (payload.payload)]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<ee:transform doc:name="Final Response" doc:id="80ae5a29-391a-480e-8149-e06c804a307a">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var failedRecords = payload filter ($.responseSuccessful == false) default []
+---
+{
+	status: if(isEmpty(failedRecords)) "SUCCESS" else "ERROR",
+	message: if(isEmpty(failedRecords)) "Records successfully processed." else "Record successfully processed partially.",
+	responsePayload: payload default []
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		<logger level="INFO" doc:name="Response Payload Logger" doc:id="fe27dfe3-c7a1-4b0e-8bfe-4b1c10415030" message="#[vars.loggingIdentifier] Final Response: #[payload]" />
+	
+</flow>
+
+</mule>

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd">
+
+	<flow name="post-contact-flow">
+		<logger level="INFO" doc:name="Logger" doc:id="ed19c667-984f-4817-970a-489505bf7500" message="#[vars.loggingIdentifier] Upsert Contact Request Received. Count: #[sizeOf(payload default [])]"/>
+		<flow-ref doc:name="get-sf-accesstoken-subflow" doc:id="90a21738-50f0-45d3-aa98-183cdb5a1f9d" name="get-sf-accesstoken-subflow" target="oAuthAccessTokenData"/>
+		<try doc:name="Try" doc:id="68b04315-4196-4a49-bf6c-13c20673d73c" >
+			<flow-ref doc:name="Submit Contact Data" doc:id="3c966297-3fdf-4daa-aeac-718674c8daf7" name="submit-contact-data-flow"/>
+ 			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="d2b5a5d5-e45e-4704-a766-5b5698ab5376" type="HTTP:SECURITY, HTTP:UNAUTHORIZED">
+					<logger level="INFO" doc:name="Logger" doc:id="0606bb10-1b05-4e02-85be-da17090ebb0e" message="#[vars.loggingIdentifier] Submission of Contact Data failed. Retrying with new token" />
+					<flow-ref doc:name="generate-new-token-subflow" doc:id="18a275e1-0756-4986-8ffd-2ac26c7d2dd2" name="generate-new-token-subflow" target="oAuthAccessTokenData"/>
+					<flow-ref doc:name="Resubmit Contact Data with new token" doc:id="41a61a73-f734-42ba-8ace-e8b51b88a1db" name="submit-contact-data-flow"/>
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</flow>
+	<sub-flow name="submit-contact-data-flow" doc:id="3ef9abe8-45da-4fc2-b59d-a27b22e9b25f" >
+		<ee:transform doc:name="Transform Request" doc:id="edf9d61a-a209-4c5e-b506-88fae330bd0c" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+import java!java::lang::System
+
+var adminRole = p('role.admin')
+var instructorRole = p('role.instructor')
+
+fun getStreet(address1, address2)  = 
+	if(!isBlank(address2)) 
+		//(address1 as String) ++ System::lineSeparator() ++ (address2 as String)
+		(address1 as String) ++ ", " ++ (address2 as String)
+	else 
+		address1
+		
+//Admin and Instructor can't be together, in such cases Admin will be used.
+fun formatContactType(contactTypes) = 
+	if((contactTypes contains adminRole) and (contactTypes contains instructorRole))
+		((contactTypes - instructorRole) joinBy ';')
+	else
+		(contactTypes joinBy ';')
+				
+---
+payload map {
+	accountId: $.accountId,
+	contactId: $.contactId,
+	contactType: formatContactType($.contactType),
+	title: $.title,
+	firstName: $.firstName,
+	lastName: $.lastName,
+	phone: $.phoneNumber,		
+	email: $.emailAddress,
+	address: getStreet($.mailingAddress.addressLine1,$.mailingAddress.addressLine2),
+	city: $.mailingAddress.city,
+	state: $.mailingAddress.state,		
+	zip: $.mailingAddress.zip,
+	country: $.mailingAddress.country
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="9e78873c-598e-4dd3-833f-b4a712525973" message="#[vars.loggingIdentifier] SF Request Contact Email Addresses: #[payload.email]"/>
+		<try doc:name="Try" doc:id="f3dd692c-61c3-4231-b975-40adc93ef5e6" >
+			<http:request method="POST" doc:name="Submit Contact Data" doc:id="8aad8183-5845-4982-8073-8d76d3e5fee7" path="${contact.apex.upsert.endpoint}" config-ref="SF_Instance_HTTP_Request_Configuration" outputMimeType="application/json">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization : (vars.oAuthAccessTokenData.token_type default 'Bearer') ++ ' ' ++ (vars.oAuthAccessTokenData.access_token default '')
+}]]]></http:headers>
+		</http:request>
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="f30bf24a-0146-4ff9-8305-25a54c0aac46" >
+					<logger level="ERROR" doc:name="Logger" doc:id="080034ba-1532-4158-8659-c25af88463bc" message="#[vars.loggingIdentifier] Failed to invoke SF Contact Upsert"/>
+					<raise-error doc:name="Raise error" doc:id="3d6fee8a-d17e-4d83-b9db-f299eeef59f6" type="SF:CONTACT_UPSERT_FAILURE" description="#[error.description]"/>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<choice doc:name="Choice" doc:id="867f6f25-aa84-4b88-a1cb-dcb95292e3bd" >
+			<when expression='#[payload.response.status == "ERROR"]'>
+				<raise-error doc:name="Raise error" doc:id="c6d5968a-57df-43e3-b2a2-4da487b19f91" type="SF:CONTACT_UPSERT_FAILURE" description="#[payload.response.Message]"/>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Final Payload" doc:id="7a28af50-3f4a-46a8-a32e-209681a2f3cc" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload.response.Payload map {
+  accountId: $.accountId,
+  contactId: $.contactId,
+  accountContactId: $.accountcontactId,
+  firstName: $.firstName,
+  lastName: $.lastName,
+  emailAddress: $.email
+}
+
+]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="1d2b5757-cdaf-4ffc-ad40-db834bf9cc42" message="#[vars.loggingIdentifier] Final Response: #[payload]"/>
+			</otherwise>
+		</choice>
+	
+</sub-flow>
+
+</mule>

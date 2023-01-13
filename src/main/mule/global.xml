@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:cloudhub="http://www.mulesoft.org/schema/mule/cloudhub"
+	xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
+	xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd 
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/cloudhub http://www.mulesoft.org/schema/mule/cloudhub/current/mule-cloudhub.xsd">
+
+   <apikit:config name="api-config" api="resource::aa58497e-dc3d-4c11-a46f-3caa6010322f:arc-account-contact-sf-papi:1.0.0:raml:zip:api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+	
+   <http:listener-config name="HTTPS_Listener_Config"  doc:name="HTTP Listener config" doc:id="d1361e54-8e35-4f49-b484-598b168f6adf">
+		<http:listener-connection host="0.0.0.0" port="${https.port}" protocol="HTTPS">
+			<tls:context >
+				<tls:key-store type="pkcs12" path="${keystore.path}" keyPassword="${secure::keystore.keypassword}" password="${secure::keystore.password}" />
+			</tls:context>
+ 		</http:listener-connection>
+	</http:listener-config>
+
+	<api-gateway:autodiscovery apiId="${api.autodiscovery.id}" doc:name="API Autodiscovery" doc:id="2698fd62-aa36-4352-aa31-2caf684b382e" flowRef="api-main" ignoreBasePath="true"/>
+
+    <configuration-properties doc:name="Configuration properties" doc:id="ba48bb22-1994-4890-a674-e057274edfcb" file="config/configuration-common.yaml" />
+	<secure-properties:config name="Secure_Properties_Config_common" doc:name="Secure Properties Config" doc:id="ce2ceff0-7d46-468d-b33f-a42d14777d21" file="config/configuration-common.yaml" key="${MULE_SECURE_PROPERTIES_KEY}" />
+	<configuration-properties doc:name="Configuration properties" doc:id="620c5973-9ccf-4446-a37b-56a1ab89f872" file="config/configuration-${MULE_ENV}.yaml" />
+	<secure-properties:config name="Secure_Properties_Config" doc:name="Secure Properties Config" doc:id="7c55cd67-159d-448a-9f9c-0577f2cbcaad" file="config/configuration-${MULE_ENV}.yaml" key="${MULE_SECURE_PROPERTIES_KEY}" />
+	<configuration-properties doc:name="Error Config Property" doc:id="20fe41d1-de17-476f-a421-43aa6d67a5db" file="config/error-properties.yaml" />
+ <!-- 	<salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="4d3c823f-250b-4639-be24-367fdd9819ca" >
+		<salesforce:oauth-user-pass-connection consumerKey="${secure::salesforce.consumerkey}"
+		 consumerSecret="${secure::salesforce.consumersecret}"
+		 username="${salesforce.username}" password="${secure::salesforce.password}" tokenEndpoint="${salesforce.token.url}" securityToken="${secure::salesforce.securitytoken}"/>
+	</salesforce:sfdc-config>
+ -->
+  	
+  	
+   <salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="fc25b46a-7eff-433e-a151-c427d79c36c0" >
+		<salesforce:oauth-user-pass-connection consumerKey="${secure::salesforce.consumerkey}"
+		 consumerSecret="${secure::salesforce.consumersecret}"
+		 username="${salesforce.username}" password="${secure::salesforce.password}" tokenEndpoint="${salesforce.token.url}" securityToken="${secure::salesforce.securitytoken}"
+		 />
+	</salesforce:sfdc-config>
+	<http:request-config name="SF_HTTP_Request_Configuration" doc:name="HTTP Request configuration" doc:id="b29fb5d9-ae8e-4ff6-9c69-f57af044ceb3" >
+		<http:request-connection protocol="HTTPS" host="${salesforce.host}" port="${salesforce.port}" />
+	</http:request-config>
+	<http:request-config name="SF_Instance_HTTP_Request_Configuration" doc:name="HTTP Request configuration" doc:id="3e6fccda-76ce-493c-897b-6d9c81864e67" responseTimeout="${https.response.timeout}">
+		<http:request-connection host="#[vars.oAuthAccessTokenData.instance_url_host]" protocol="HTTPS" port="443" connectionIdleTimeout="${https.connection.timeout}"/>
+	</http:request-config>
+
+ 	<cloudhub:config name="CloudHub_Config" doc:name="CloudHub Config" doc:id="763c2d61-b882-471a-8d71-a9dba59dd388" >
+		<cloudhub:connection username="${cloudhub.username}" password="${secure::cloudhub.password}" environment="${environment.id}" />
+	</cloudhub:config>
+</mule>

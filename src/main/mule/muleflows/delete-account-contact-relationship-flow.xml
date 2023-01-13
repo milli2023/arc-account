@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd">
+    <flow name="delete-account-contact-relationship-flow">
+		<flow-ref doc:name="delete-contact-initialize-vars-subflow" doc:id="ec0cdd4a-5414-4627-a8c1-66df1bcd8f2d" name="delete-contact-initialize-vars-subflow"/>
+		<choice doc:name="Payload size &gt; Sync Threshold?" doc:id="6369b1fc-f98e-4958-bd7d-980fc45d7584" >
+			<when expression="#[sizeOf(payload default []) &gt; (vars.contactDeleteSyncThreshold as Number)]">
+				<logger level="INFO" doc:name="Processing In Async Mode" doc:id="f8076679-7b95-4162-a289-0fe75c10a888" message="#[vars.loggingIdentifier] ASYNC Processing - Contact Delete Request Received. Count: #[sizeOf(payload default [])] SyncProcessingThreshold: #[vars.contactDeleteSyncThreshold]"/>
+				<async doc:name="Async" doc:id="9454b63d-8ca4-47c1-9fbc-df83701ed37d" >
+					<flow-ref doc:name="delete-contact-records-subflow" doc:id="ec521de4-d131-4f7f-a7cf-1bc0305f31cf" name="delete-account-contact-relationship-records-subflow"/>
+				</async>
+				<ee:transform doc:name="Async Processing Response" doc:id="8b728837-4d36-48ac-b4e7-d9feab114577">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	status: "SUCCESS",
+	message: "Request Received and will be processed asynchronously."
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="delete-contact-records-subflow" doc:id="a75885eb-f68f-49d6-b58d-f69895f80a01" name="delete-account-contact-relationship-records-subflow" />
+			</otherwise>
+		</choice>
+    
+</flow>
+	<sub-flow name="delete-contact-initialize-vars-subflow" doc:id="d8422fd8-519f-4b14-9b8f-f4a8f174bf9c" >
+		<set-variable value="#[Mule::p('syncprocessing.threshold.contact.delete') as Number]" doc:name="Set contactDeleteSyncThreshold" doc:id="207ffc1d-f852-4143-a2d1-c83802f94aa8" variableName="contactDeleteSyncThreshold" />
+		<set-variable value="#[Mule::p('batch.size.contact.delete') as Number]" doc:name="Set contactDeleteBatchSize" doc:id="58386261-04f0-42a1-800d-6a466c3b286f" variableName="contactDeleteBatchSize" />
+	</sub-flow>
+	<flow name="delete-account-contact-relationship-records-subflow" doc:id="f1de4cc5-0e8c-4e47-adec-6e3b668d50da">
+		<logger level="DEBUG" doc:name="Logger" doc:id="2832fb3e-9e65-4bb1-9b7b-2606fe0a9a42" message="#[vars.loggingIdentifier] Contact Delete Request Received. Count: #[sizeOf(payload default [])]. BatchSize: #[vars.contactDeleteBatchSize]"/>
+		<ee:transform doc:name="Transform for Parallel ForEach" doc:id="a5c02717-bc95-48e9-9e3a-394d89019cc5" >
+			<ee:message >
+				<ee:set-payload resource="dwl/contact/delete/delete-contact-divide.dwl" />
+			</ee:message>
+		</ee:transform>
+		<parallel-foreach doc:name="Parallel For Each" doc:id="4a4a2810-5e53-41d5-bed3-03ae624efa6a" collection="#[payload]" maxConcurrency="${max.concurrency.contact.delete}">
+			<ee:transform doc:name="SF Request" doc:id="d91747cc-67b0-479d-9b54-c8a7a78b6c70" >
+				<ee:message >
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable resource="dwl/contact/delete/sf-delete-contact-request.dwl" variableName="sfRequest" />
+				</ee:variables>
+			</ee:transform>
+			<logger level="INFO" doc:name="SF Request Logger" doc:id="d0d603b0-0882-4d4c-8152-143867d1075c" message="#[vars.loggingIdentifier] SFRequest : #[vars.sfRequest] Payload: #[payload]]"/>
+ 			<try doc:name="Try" doc:id="5ddb7562-d0b8-479c-93d4-069655a08212" >
+				<salesforce:delete doc:name="Delete" doc:id="3cec03aa-5e9b-4161-a51a-f8e5d6e5d618" config-ref="Salesforce_Config">
+					<reconnect />
+					<salesforce:ids ><![CDATA[#[vars.sfRequest.*Id]]]></salesforce:ids>
+				</salesforce:delete>
+				<error-handler >
+					<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="c3d7c339-752a-4f4e-bc6f-a54b13220c00" >
+						<logger level="ERROR" doc:name="Logger" doc:id="bcf54a36-1ab3-4316-93bd-041b99943689" message="#[vars.loggingIdentifier] SF Error Occurred"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+			<logger level="INFO" doc:name="Response Message Logger" doc:id="75e4120d-d86a-4e1f-aee7-7470988a5575" message="#[vars.loggingIdentifier] SF Response Received. Payload #[payload]" />
+			<ee:transform doc:name="Parse SF Response" doc:id="03e64455-a3fc-493e-b1c8-c1a1313030db" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+import * from dw::core::Arrays
+output application/json
+---
+vars.sfRequest map ( sfRequest , indexOfSfRequest ) -> {
+	Id: sfRequest.Id
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<ee:transform doc:name="Failed Records" doc:id="cf2c2df9-c89a-4fdd-bab0-2c7c145365b0">
+				<ee:message>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="failedRecordsMessage"><![CDATA[%dw 2.0
+output application/json
+var failedRecords = payload filter ($.responseSuccessful == false) default []
+---
+failedRecords map {
+	accountcontactId: $.accountcontactId,
+	responseMessage: $.responseMessage
+}]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<logger level="ERROR" doc:name="Failed Records" doc:id="5b9a3753-3d73-4c2f-ba53-1626c19cf062" message="#[vars.loggingIdentifier] Failed Records: #[vars.failedRecordsMessage]" />
+ 		</parallel-foreach>
+		<ee:transform doc:name="Final Payload" doc:id="f7bb85a8-29de-42e1-b081-d7ecdec67fd2">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+flatten (payload.payload)]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<ee:transform doc:name="Final Response" doc:id="68143573-1896-4df0-81fc-162cda84f7f4">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var failedRecords = payload filter ($.responseSuccessful == false) default []
+---
+{
+	status: if(isEmpty(failedRecords)) "SUCCESS" else "ERROR",
+	message: if(isEmpty(failedRecords)) "Records successfully processed." else "Record successfully processed partially.",
+	responsePayload: payload default []
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		<logger level="INFO" doc:name="Response Payload Logger" doc:id="9565cb76-6034-42ef-aaa7-75a6fa4e03c2" message="#[vars.loggingIdentifier] Final Response: #[payload]" />
+	
+</flow>
+
+</mule>

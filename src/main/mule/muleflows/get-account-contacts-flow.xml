@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd">
+    <flow name="get-account-contacts-flow">
+		<choice doc:name="Choice" doc:id="4f073fc6-aa77-4a25-9909-6971a42e6bea" >
+			<when expression="#[vars.SystemSource == 'HealthStream']">
+				<set-variable value="${ids.accountguids.HealthStream}" doc:name="ClientAccountGuid For HealthStream" doc:id="860b1816-1a0f-437f-9933-992baa1ab361" variableName="ClientAccountGuid" />
+			</when>
+			<when expression="#[vars.SystemSource == 'SingleSource']">
+				<set-variable value="${ids.accountguids.SingleSource}" doc:name="ClientAccountGuid For SingleSource" doc:id="8c192518-c7e6-422b-bc1c-63527c435503" variableName="ClientAccountGuid" />
+			</when>
+		</choice>
+		<logger level="INFO" doc:name="Logger" doc:id="1898c09b-27ab-4217-bc33-df892165f625" message="#['Client Guid ' ++ vars.ClientAccountGuid]" />
+		<salesforce:query doc:name="Account" doc:id="bf9d2746-756a-42b2-88ae-2f1bb8e65a80" config-ref="Salesforce_Config">
+			<salesforce:salesforce-query ><![CDATA[Select 
+Id,
+Name,
+Preferred_Payment_type__c
+FROM Account Where Id = ':AccountId' And (ParentId = ':ClientAccountGuid' Or Id = ':ClientAccountGuid')]]></salesforce:salesforce-query>
+			<salesforce:parameters ><![CDATA[#[output application/java
+---
+{
+	"AccountId" : payload.accountId,
+	"ClientAccountGuid" : vars.ClientAccountGuid
+}]]]></salesforce:parameters>
+		</salesforce:query>
+		<ee:transform doc:name="Account Information" doc:id="260372f7-2676-4341-9cb9-6bd1d2417ec5" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="5443acd4-fe54-40c1-8927-8345bf03fda3" >
+			<when expression="#[sizeOf(payload) != 0]">
+				<set-variable value="#[payload]" doc:name="Account Information" doc:id="bedd723c-208f-41ac-853c-37fec3c1f1ef" variableName="accountInfo" />
+				<logger level="INFO" doc:name="Account Information" doc:id="700bd34d-c014-40d5-9e5e-06a84e0da7d6" message="#[vars.accountInfo]]" />
+				<salesforce:query doc:name="Account Contact Relationship" doc:id="7749cdd5-9150-4039-a481-90c2ea16eb65" config-ref="Salesforce_Config">
+			<salesforce:salesforce-query><![CDATA[SELECT Id,AccountId,ContactId,Roles,LastModifiedDate FROM AccountContactRelation Where AccountId = ':AccountId']]></salesforce:salesforce-query>
+			<salesforce:parameters><![CDATA[#[output application/java
+---
+{
+	AccountId : vars.accountInfo[0].Id
+}]]]></salesforce:parameters>
+		</salesforce:query>
+				<ee:transform doc:name="Transform Message" doc:id="653b2468-1790-442d-895b-c07c646315cb">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<parallel-foreach doc:name="Parallel For Each" doc:id="ce83d2ff-874a-4b29-995e-16430658d297" >
+			<set-variable value="#[payload]" doc:name="Account Contact Information" doc:id="98ea774a-2ec6-4caf-9069-438dbc515e70" variableName="accountContactInfo" />
+			<logger level="INFO" doc:name="Logger" doc:id="c501f176-9665-4280-9cad-cdffd3c1da09" message="Account Contact Relationship #[vars.accountContactInfo]"/>
+			<salesforce:query doc:name="Contact" doc:id="4a8eda83-989b-41c6-8def-9ff1dbbc55d5" config-ref="Salesforce_Config">
+				<salesforce:salesforce-query ><![CDATA[SELECT Id,
+AccountId,
+Email,
+FirstName,
+Instructor__c,
+LastName,
+Name,
+(SELECT Id, username FROM Users) 
+FROM Contact Where Id = ':ContactId']]></salesforce:salesforce-query>
+				<salesforce:parameters ><![CDATA[#[output application/java
+---
+{
+	"ContactId" : payload.ContactId
+}]]]></salesforce:parameters>
+			</salesforce:query>
+			<ee:transform doc:name="Transform Message" doc:id="95ff40d9-2cc8-426e-b335-0a45193003ac" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<logger level="INFO" doc:name="Logger" doc:id="238eba56-496d-44f9-beeb-c9ff72d81aba" message="User Field Reference in Payload #[payload]"/>
+					<ee:transform doc:name="Transform Message" doc:id="5566c2eb-5ece-465c-85a5-402ce77139d7" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	AccountId: payload.AccountId[0],
+	ContactId : payload.Id[0],
+	Username: payload.Users[0][0].Username,
+	ContactName: payload.Name[0],
+	ContactFirstName: payload.FirstName[0],
+	ContactLastName: payload.LastName[0],
+	ContactEmail: payload.Email[0] default "",
+	AccountContactRelationship: vars.accountContactInfo
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="fe06158c-d3c9-4d4a-9e34-2ca5703f12d0" message="Foreach Contact  Payload #[payload]"/>
+		</parallel-foreach>
+		<!--  
+		<foreach doc:name="For Each" doc:id="d7442370-486b-4652-81e8-a8c574e40ce7" >
+			<set-variable value="#[payload]" doc:name="Account Contact Information" doc:id="4774e6b4-49f4-4820-ac78-f7639e94dda4" variableName="accountContactInfo" />
+			<logger level="INFO" doc:name="Logger" doc:id="fd9bbf27-1874-4431-9438-261cdc8b6812" message="Account Contact Relationship #[vars.accountContactInfo]"/>
+			<salesforce:query doc:name="Contact" doc:id="01df0f95-96d1-4c2f-aac3-84fd80bcd79b" config-ref="Salesforce_Config">
+				<salesforce:salesforce-query ><![CDATA[SELECT Id,
+AccountId,
+Email,
+FirstName,
+Instructor__c,
+LastName,
+Name
+FROM Contact Where Id = ':ContactId']]></salesforce:salesforce-query>
+				<salesforce:parameters ><![CDATA[#[output application/java
+-&#45;&#45;
+{
+	"ContactId" : payload.ContactId
+}]]]></salesforce:parameters>
+			</salesforce:query>
+			<ee:transform doc:name="Transform Message" doc:id="3760e908-cd26-4939-b949-df6b4e8b0197" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+-&#45;&#45;
+{
+	AccountId: payload.AccountId[0],
+	ContactId : payload.Id[0],
+	ContactName: payload.Name[0],
+	AccountContactRelationship: vars.accountContactInfo
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="435b27fb-411e-406c-8aec-cca18af8e241" message="Foreach Contact  Payload #[payload]"/>
+		</foreach>
+		-->
+		<ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	accountName: vars.accountInfo[0].Name,
+	accountId: vars.accountInfo[0].Id,
+	numberOfContacts: sizeOf(payload),
+	contacts : payload.payload
+}
+]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>		
+			</when>
+			<otherwise>
+				<ee:transform doc:name="Transform Message" doc:id="a1a9f360-fb44-4d27-b756-f9003827ad44" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"message" : "Account not found"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="Account Not Found" doc:id="a14bd1d6-6407-4332-b58b-fcff5ff38871" name="get:\throw404:api-config"/>
+			</otherwise>
+		</choice>
+    </flow>
+</mule>

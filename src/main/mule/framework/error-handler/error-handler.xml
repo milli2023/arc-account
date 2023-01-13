@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<flow name="error-mainErrorHandlerFlow" doc:id="d5caea74-9fd1-466e-8570-9457edde783e" >
+		<flow-ref doc:name="error-handler-before-errorTypeFlow" doc:id="057343d3-76e0-4f98-8b2f-928c5768b5c0" name="error-handler-before-errorTypeFlow"/>
+		<flow-ref doc:name="error-handler-route-errorTypeFlow" doc:id="2f402ef2-831f-4d8c-832c-7cf873595195" name="error-handler-route-errorTypeFlow"/>
+		<flow-ref doc:name="error-handler-after-errorTypeFlow" doc:id="998cc004-7065-4589-af3d-6f65cad3c943" name="error-handler-after-errorTypeFlow"/>
+	</flow>
+	
+	<sub-flow name="error-handler-before-errorTypeFlow" doc:id="62310d3c-7317-4699-9618-7925822972c9" >
+<!-- 		<json-logger:logger doc:name="Logger" doc:id="5a81f09e-36e3-4a70-ac7c-2f104f7723d8" config-ref="JSON_Logger_Config" message="In error-handler-before-errorTypeFlow" tracePoint="EXCEPTION">
+			<json-logger:content ><![CDATA[#[import modules::JSONLoggerModule output application/json -&#45;&#45;
+{
+    payload: JSONLoggerModule::stringifyNonJSON(error) 
+}]]]></json-logger:content>
+		</json-logger:logger>
+ -->
+ 		<ee:transform doc:name="Set customErrorNamespaceConfig" doc:id="2905418b-ca31-4c24-a4c3-4ab49d699283" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="customErrorNamespaceConfig" ><![CDATA[%dw 2.0
+output application/java
+var errorNamespaceKeyPrefix = Mule::p('errors.namespaceprefix.' ++ upper(error.errorType.namespace default '')) default 'default'
+---
+{
+	errorNamespaceKeyPrefix: errorNamespaceKeyPrefix,
+	overrideErrorHandlerFlow: Mule::p('errors.override.errorhandler.flowname.' ++ errorNamespaceKeyPrefix),
+	extendErrorHandlerFlow: Mule::p('errors.extend.errorhandler.flowname.' ++ errorNamespaceKeyPrefix),
+	overrideErrorResponseFlow: Mule::p('override.errorresponse.flowname')
+		
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+	
+</sub-flow>
+	<sub-flow name="error-handler-route-errorTypeFlow" doc:id="2015bfff-e8b5-4862-9b99-7d19cb950afe" >
+<!-- 		<json-logger:logger doc:name="Debug Logger" doc:id="0dd16a02-8db4-4c6f-94d2-d5fa620bb84f" config-ref="JSON_Logger_Config" message="In error-handler-route-errorTypeFlow" tracePoint="EXCEPTION" priority="DEBUG"/>
+ -->
+<!-- 		<json-logger:logger doc:name="Debug Logger" doc:id="30815427-1cf5-4362-8aa7-23e9f5370d18" config-ref="JSON_Logger_Config" message="In ErrorHandlerApiKit" tracePoint="EXCEPTION" priority="DEBUG"/>
+ -->
+ 		<logger level="DEBUG" doc:name="Logger" doc:id="2ca6470d-4f3b-480c-a201-d6770290a6cc" message="Correlation Id: #[correlationId] Error Namespace Type: #[vars.customErrorNamespaceConfig.errorNamespaceKeyPrefix] In  Route Error Type flow"/>
+		<choice doc:name="Override Error Handler?" doc:id="356e2b06-9a49-4a08-b872-a8383fcb9c1e" >
+			<when expression="#[!isBlank(vars.customErrorNamespaceConfig.overrideErrorHandlerFlow)]">
+				<logger level="DEBUG" doc:name="Logger" doc:id="b74d4778-fe24-422d-b5da-6c536b58ff1f" message="Correlation Id: #[correlationId] Error Namespace Type: #[vars.customErrorNamespaceConfig.errorNamespaceKeyPrefix] In  Override Error Handler flow. Override flow name: #[vars.customErrorNamespaceConfig.overrideErrorHandlerFlow]"/>
+				<ee:transform doc:name="Call override error handler flow" doc:id="f59af78d-5978-4e9c-b705-637710cc15ef" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+Mule::lookup(vars.customErrorNamespaceConfig.overrideErrorHandlerFlow default '', {})]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			
+
+</when>
+			<otherwise>
+				<ee:transform doc:name="Set error variables" doc:id="efb1c88f-83e6-4cfc-a836-336caaaa1565">
+					<ee:message>
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+fun concatStrings(str1, str2, str3="", str4="") = 
+	(str1 default '') ++ (str2 default '') ++ (str3 default '') ++ (str4 default '')
+var errorNamespaceKeyResponse = Mule::p(concatStrings('errors.response.', vars.customErrorNamespaceConfig.errorNamespaceKeyPrefix, '.', error.errorType.identifier))
+var errorNamespaceKeyDefaultResponse = Mule::p(concatStrings('errors.response.', vars.customErrorNamespaceConfig.errorNamespaceKeyPrefix, '.', 'DEFAULT'))
+---
+if (errorNamespaceKeyResponse != null)
+	read(errorNamespaceKeyResponse as String, 'application/json')
+else if(errorNamespaceKeyDefaultResponse != null)
+	read(errorNamespaceKeyDefaultResponse as String, 'application/json')
+else	
+	read(Mule::p('errors.response.default.DEFAULT') as String, 'application/json')
+]]></ee:set-payload>
+					
+
+</ee:message>
+				</ee:transform>
+				<choice doc:name="Extend Standard Error Handler?" doc:id="c64d811e-986e-4e99-88f8-f1dcb4c2c4b6" >
+					<when expression="#[!isBlank(vars.customErrorNamespaceConfig.extendErrorHandlerFlow)]">
+						<logger level="DEBUG" doc:name="Logger" doc:id="90850792-8da5-4ddc-8260-d1214e7901ed" message="Correlation Id: #[correlationId] Error Namespace Type: #[vars.customErrorNamespaceConfig.errorNamespaceKeyPrefix] In  Extend Error Handler flow. ExtendErrorHandler flow name: #[vars.customErrorNamespaceConfig.extendErrorHandlerFlow]"/>
+						<ee:transform doc:name="Call extend error handler flow" doc:id="9d72bb81-4769-4efc-b4db-23f8521804c2" >
+							<ee:message >
+								<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+Mule::lookup(vars.customErrorNamespaceConfig.extendErrorHandlerFlow default '', payload)]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+					
+</when>
+					<otherwise >
+<!-- 						<json-logger:logger doc:name="Debug Logger" doc:id="9e984be7-3174-4a65-b1bf-26d6891099e7" config-ref="JSON_Logger_Config" message="Default apikit error" tracePoint="EXCEPTION" priority="DEBUG"/>
+ -->
+						<logger level="DEBUG" doc:name="Logger" doc:id="43f62d21-8d54-4053-a7b7-7c0fff5405d6" message="Correlation Id: #[correlationId] Error Namespace Type: #[vars.customErrorNamespaceConfig.errorNamespaceKeyPrefix] Not Extending default Error Handler"/>
+					</otherwise>
+				</choice>
+			</otherwise>
+		</choice>	
+</sub-flow>
+	<sub-flow name="error-handler-after-errorTypeFlow" doc:id="14191836-1312-495d-9d16-81d2b291834f" >
+<!-- 		<json-logger:logger doc:name="Debug Logger" doc:id="8721dd31-aaec-48c7-a42e-b17526ccab77" config-ref="JSON_Logger_Config" message="In error-handler-after-errorTypeFlow" tracePoint="EXCEPTION" priority="DEBUG"/>
+ -->
+ 		<logger level="DEBUG" doc:name="Logger" doc:id="601b774f-47e0-4414-8ae9-6061d47daf7f" message="Correlation Id: #[correlationId] In error-handler-after-errorTypeFlow"/>
+		<choice doc:name="Propagate error?" doc:id="ec89ab74-3d9c-4ec7-9f0e-097eba6d3d3b" >
+			<when expression="error.errorMessage.payload.errorCode != null">
+				<ee:transform doc:name="Transform Message" doc:id="b425dc74-8396-4cdb-b412-374e01f439e0" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="httpStatus" ><![CDATA[%dw 2.0
+output application/java
+---
+error.errorMessage.payload.errorCode]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<set-payload value="#[error.errorMessage.payload]" doc:name="Set Payload" doc:id="8dfbe8eb-2762-4fb7-90eb-385f6068006d" />
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Set httpStatus and errorMessage" doc:id="006f0bb2-e7e9-40bc-985f-fc9f40b15423">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+payload.httpStatus]]></ee:set-variable>
+				<ee:set-variable variableName="errorMessage"><![CDATA[%dw 2.0
+output application/java
+---
+payload.errorMessage]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<flow-ref doc:name="error-handler-override-errorFlow" doc:id="bff2f876-16e6-48bd-b3ba-6a527446246a" name="error-handler-override-errorFlow" />
+			</otherwise>
+		</choice>
+	</sub-flow>
+	<sub-flow name="error-handler-override-errorFlow" doc:id="c40b2724-552e-48ea-91d1-e196ed02a71c" >
+<!-- 		<json-logger:logger doc:name="Debug Logger" doc:id="6915401c-c8e4-47ad-b785-a28a53ccb575" config-ref="JSON_Logger_Config" message="In error-handler-extension-errorFlow" tracePoint="EXCEPTION" priority="DEBUG"/>
+ -->		<choice doc:name="Override Standard Final Error Response?" doc:id="a73f6d0f-baf2-40b1-894e-2116c2aefaa7" >
+			<when expression="#[!isBlank(vars.customErrorNamespaceConfig.overrideErrorResponseFlow)]">
+		 		<logger level="DEBUG" doc:name="Logger" doc:id="548e4df9-4301-4440-a18f-ec2021d58676" message="Correlation Id: #[correlationId] In overriding error response flow. Override Error Response Flowname: #[vars.customErrorNamespaceConfig.overrideErrorResponseFlow]" />
+				<ee:transform doc:name="Override Standard Error Response" doc:id="7da8f887-a0f4-487c-afd5-8d4cd1c8373a" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+Mule::lookup(vars.customErrorNamespaceConfig.overrideErrorResponseFlow default '', {})]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+<!-- 				<json-logger:logger doc:name="Logger" doc:id="1648a2cb-fbb5-40a5-a00b-aba77eabc31b" config-ref="JSON_Logger_Config" message="Overriden error response"/>
+ -->			</when>			
+			<otherwise>
+		 		<logger level="DEBUG" doc:name="Logger" doc:id="49fbb335-a40f-425e-aeab-34387efe5852" message="Correlation Id: #[correlationId] In default error response flow"/>
+				<ee:transform doc:name="Standard Detailed Response" doc:id="7430adac-1a62-4f2e-8617-cd4c797a4bcb">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	httpStatus: vars.httpStatus,
+	errorType: (error.errorType.namespace default 'ANY') ++ ":" ++ (error.errorType.identifier default 'ANY'),
+	errorMessage:  vars.errorMessage default "System error",
+	errorDescription:  (
+	if(sizeOf(error.description default '') > 5000) 
+		error.description[0 to 4999] ++ "..."
+	else error.description default "An error has occurred"),
+	correlationId: correlationId
+}
+ ]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+ 		<logger level="DEBUG" doc:name="Detailed Error" doc:id="1c72c4e0-9ce3-472a-91a1-c0d54161dfeb" message="Correlation Id: #[correlationId] Detailed Error Response: #[payload]"/>
+<!-- 		<json-logger:logger doc:name="Logger" doc:id="478b9a8d-3f3b-45f5-911c-aa72cd437453" config-ref="JSON_Logger_Config" message="Default error log" tracePoint="EXCEPTION"/>
+ -->				<ee:transform doc:name="Error Response" doc:id="54e987c2-396b-41ff-8af5-9f5080339754" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[ %dw 2.0
+output application/json
+---
+{
+	correlationId: payload.correlationId,
+	errorType: payload.errorType,
+	errorMessage:  payload.errorMessage,
+	errorDescription:  payload.errorDescription
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			
+</otherwise>
+		</choice>
+ 		<logger level="ERROR" doc:name="Error Response" doc:id="a8aec95f-6dad-4000-823b-cdb4fede043b" message="Correlation Id: #[correlationId] Returned Error Response: #[payload]"/>
+	
+</sub-flow>
+</mule>

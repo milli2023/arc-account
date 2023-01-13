@@ -1,0 +1,31 @@
+cloudhub:
+  username: arc_anypoint
+  password: "![/R4hdz9mNnE2tFTFaHa4FNl8m9cwb3gVSRF8YngJ6gA=]"
+  
+api:
+  autodiscovery.id: "16417004"
+
+keystore:
+  path: "keys/keystore-prd.pkcs12"
+  keypassword: "![6HrfXf+tk/bCo4WrfovAyQ==]"
+  password: "![6HrfXf+tk/bCo4WrfovAyQ==]"
+  
+  
+ids:
+  recordtype:
+    organization: "0120V000001xno9QAA"
+  accountowner:
+    HealthStream: "0053o000008a8fhAAA"
+    SingleSource: "0053o000008a8fhAAA"   
+  accountgroup: "a3e0V000001MtXwQAK"
+
+salesforce:
+  host: "login.salesforce.com"
+  port: "443"
+  token.endpoint: "/services/oauth2/token"
+  token.url: "https://login.salesforce.com/services/oauth2/token"
+  consumerkey: "![V5+ZXGUI9VzbN1mr1As3cz6m4WTfPP/FR4S5iSElWRRrOaQPZ+nLTxdd94x3/efge61upVUap3IGhHJOb39aFVZNjcW4Im1wuhhrAMEMtyHqRbu5oee39Zas9uB9G3mZ]"
+  consumersecret: "![vmDkONVhhI6rxIdLixKnGz4d78NsFBdzH63cP81uPubnQqw1f1plLmmjcrnYaeJLgghWArTjPQtbXFj5A/VTBAvf3XKOaUpUNKMElkfrP88=]"
+  username: "mulesoftapi@redcross.org"
+  password: "![EnDsVybkY26an+Hwe/1Uvw==]" 
+  securitytoken: "![3fdwKyN+SXnTygHhiX3SIhES0KZNMwhajS8xXnqKeC4=]"

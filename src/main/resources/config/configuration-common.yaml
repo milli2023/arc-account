@@ -1,0 +1,36 @@
+api.path: /accountcontact/sf/sapi/v1/*
+https:
+  connection.timeout: "1200000"
+  response.timeout: "1200000"
+
+objectstore: 
+  expiration.minutes: "30"
+  entryttl.seconds: "1800"
+  maxentries: "1"
+  
+syncprocessing.threshold:
+  organization: "10"
+  contact.delete: "10"
+    
+batch.size:
+  organization: "20"
+  contact.delete: "20"
+  
+max.concurrency:
+  organization: "5"
+  contact.delete: "5"
+    
+role:
+  admin: "Admin"
+  instructor: "Instructor"
+  
+contact.apex.upsert.endpoint: "/services/apexrest/PHSSAccountContact/batch"
+
+default:
+  preferred.payment.type: "Credit/Debit Card"
+  
+organization:
+  HealthStream:
+    credit_limit: "20000.00"
+  SingleSource:
+    credit_limit: "20000.00"
